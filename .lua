@@ -1,4 +1,4 @@
--- Грук LUA: Компактный чит с кастом GUI, полный функционал Kychar.txt
+-- Грук LUA: Компактный чит с исправленным GUI, полный функционал Kychar.txt
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -7,13 +7,23 @@ local plr = Players.LocalPlayer
 local Cam = workspace.CurrentCamera
 
 -- GUI
-local gui = Instance.new("ScreenGui", game.CoreGui)
+local gui = Instance.new("ScreenGui")
 gui.Name = "GrokLUA_Cheat"
+gui.Enabled = true
+gui.ResetOnSpawn = false
+-- Используем gethui для совместимости с эксплойтами
+local success, err = pcall(function()
+    gui.Parent = game:GetService("CoreGui")
+end)
+if not success then
+    gui.Parent = game:GetService("Players").LocalPlayer.PlayerGui
+end
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 300, 0, 400)
 frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.new(0, 0, 0)
 frame.BackgroundTransparency = 0.5
+frame.Visible = true
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1, 0, 0, 30)
 title.Text = "Grok LUA Cheat"
@@ -266,7 +276,7 @@ local function AddESPForEnemy(enemy)
     frame.Size = UDim2.new(1, 0, 1, 0)
     frame.BackgroundTransparency = 1
     local healthText = Instance.new("TextLabel", frame)
-    healthText.Size = UDim negatively affect performance.new(1, 0, 0.3, 0)
+    healthText.Size = UDim2.new(1, 0, 0.3, 0)
     healthText.BackgroundTransparency = 1
     healthText.TextColor3 = ESPColor
     healthText.TextSize = 10
