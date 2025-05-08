@@ -1,4 +1,4 @@
--- Грук LUA: Компактный чит с маленьким прямоугольным GUI, открытие/закрытие кнопкой
+-- Грук LUA: Компактный чит с маленьким GUI, фикс багов, байпас античита, полёт для мобилок
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -65,7 +65,7 @@ local function addToggle(name, callback)
         callback(state)
     end)
     yOffset = yOffset + 30
-    return toggle
+    return toggle, function() return state end
 end
 
 local function addSlider(name, min, max, default, callback)
@@ -85,7 +85,7 @@ local function addSlider(name, min, max, default, callback)
     slider.TextSize = 12
     local value = default
     slider.MouseButton1Click:Connect(function()
-        value = value + 10
+        value = value + math.ceil((max - min) / 10)
         if value > max then value = min end
         label.Text = name .. ": " .. value
         callback(value)
@@ -144,6 +144,37 @@ local flyEnabled = false
 local auraOn = false
 local killDist = 15
 local selectedItem = "Select an item"
+local lastPosition = Vector3.new(0, 0, 0)
+local infiniteJumpConnection = nil
+
+-- Mobile Fly
+local flySpeed = 50
+local joystick = Instance.new("Frame", gui)
+joystick.Size = UDim2.new(0, 100, 0, 100)
+joystick.Position = UDim2.new(0, 10, 1, -110)
+joystick.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5)
+joystick.BackgroundTransparency = 0.5
+joystick.Visible = false
+local joystickDot = Instance.new("Frame", joystick)
+joystickDot.Size = UDim2.new(0, 20, 0, 20)
+joystickDot.Position = UDim2.new(0.5, -10, 0.5, -10)
+joystickDot.BackgroundColor3 = Color3.new(1, 1, 1)
+local touchStart = nil
+local touchId = nil
+
+-- Античит мониторинг
+local function checkTeleport()
+    local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+    if hrp and (hrp.Position - lastPosition).Magnitude > 50 then
+        speedHackEnabled = false
+        jumpHackEnabled = false
+        infiniteJumpEnabled = false
+        flyEnabled = false
+        return true
+    end
+    lastPosition = hrp and hrp.Position or lastPosition
+    return false
+end
 
 local function isNPC(obj)
     return obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj.Humanoid.Health > 0 and obj:FindFirstChild("Head") and obj:FindFirstChild("HumanoidRootPart") and not Players:GetPlayerFromCharacter(obj)
@@ -325,14 +356,30 @@ local function GetItemNames()
     return items
 end
 
-local function applySpeedHack()
+local function applySpeedHack(state)
+    local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
     local humanoid = plr.Character and plr.Character:FindFirstChild("Humanoid")
-    if humanoid then humanoid.WalkSpeed = speedHackEnabled and speedValue or 16 end
+    if hrp and humanoid then
+        local bodyVelocity = hrp:FindFirstChild("SpeedHackVelocity")
+        if state and speedHackEnabled then
+            if not bodyVelocity then
+                bodyVelocity = Instance.new("BodyVelocity", hrp)
+                bodyVelocity.Name = "SpeedHackVelocity"
+                bodyVelocity.MaxForce = Vector3.new(math.huge, 0, math.huge)
+            end
+            bodyVelocity.Velocity = humanoid.MoveDirection * speedValue
+        elseif bodyVelocity then
+            bodyVelocity:Destroy()
+            humanoid.WalkSpeed = 16
+        end
+    end
 end
 
-local function applyJumpHack()
+local function applyJumpHack(state)
     local humanoid = plr.Character and plr.Character:FindFirstChild("Humanoid")
-    if humanoid then humanoid.JumpHeight = jumpHackEnabled and (7.2 * jumpMultiplier) or 7.2 end
+    if humanoid then
+        humanoid.JumpHeight = state and jumpHackEnabled and (7.2 * jumpMultiplier) or 7.2
+    end
 end
 
 local function applyNoClip()
@@ -382,8 +429,61 @@ local function killAuraLoop()
     end
 end
 
+local function applyFly(state)
+    local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local bodyVelocity = hrp:FindFirstChild("FlyVelocity")
+    local bodyGyro = hrp:FindFirstChild("FlyGyro")
+    if state and flyEnabled then
+        if not bodyVelocity then
+            bodyVelocity = Instance.new("BodyVelocity", hrp)
+            bodyVelocity.Name = "FlyVelocity"
+            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        end
+        if not bodyGyro then
+            bodyGyro = Instance.new("BodyGyro", hrp)
+            bodyGyro.Name = "FlyGyro"
+            bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            bodyGyro.CFrame = hrp.CFrame
+        end
+        joystick.Visible = true
+    else
+        if bodyVelocity then bodyVelocity:Destroy() end
+        if bodyGyro then bodyGyro:Destroy() end
+        joystick.Visible = false
+    end
+end
+
+-- Mobile Fly Controls
+UserInputService.TouchStarted:Connect(function(input)
+    if flyEnabled and input.UserInputState == Enum.UserInputState.Begin then
+        touchStart = input.Position
+        touchId = input.UserInputId
+        joystickDot.Position = UDim2.new(0.5, -10, 0.5, -10)
+    end
+end)
+
+UserInputService.TouchMoved:Connect(function(input)
+    if flyEnabled and input.UserInputId == touchId then
+        local delta = input.Position - touchStart
+        local normalized = Vector2.new(
+            math.clamp(delta.X / 50, -1, 1),
+            math.clamp(delta.Y / 50, -1, 1)
+        )
+        joystickDot.Position = UDim2.new(0.5 + normalized.X * 0.4, -10, 0.5 + normalized.Y * 0.4, -10)
+    end
+end)
+
+UserInputService.TouchEnded:Connect(function(input)
+    if input.UserInputId == touchId then
+        touchStart = nil
+        touchId = nil
+        joystickDot.Position = UDim2.new(0.5, -10, 0.5, -10)
+    end
+end)
+
 -- GUI Controls
-addToggle("Aimbot", function(v)
+local aimbotToggle = addToggle("Aimbot", function(v)
     aimbotEnabled = v
     fovCircle.Visible = v
 end)
@@ -392,7 +492,7 @@ addSlider("FOV Radius", 50, 500, 100, function(v)
     fovCircle.Radius = v
     fovCircle.Position = Cam.ViewportSize / 2
 end)
-addToggle("ESP Items/Mobs", function(v)
+local espToggle = addToggle("ESP Items/Mobs", function(v)
     ESPEnabled = v
     if v then
         UpdateESP()
@@ -401,76 +501,88 @@ addToggle("ESP Items/Mobs", function(v)
         ClearESP()
     end
 end)
-addToggle("ESP Players", function(v) ESPPlayerEnabled = v end)
-addToggle("ESP Zombies", function(v) ESPZombyEnabled = v end)
-addSlider("WalkSpeed", 1, 500, 50, function(v)
-    speedValue = v
-    applySpeedHack()
-end)
-addToggle("Speed Hack", function(v)
-    speedHackEnabled = v
-    applySpeedHack()
-end)
-addSlider("Jump Height", 10, 500, 50, function(v)
-    local humanoid = plr.Character and plr.Character:FindFirstChild("Humanoid")
-    if humanoid then humanoid.JumpHeight = v end
-end)
-addToggle("Infinite Jump", function(v)
-    infiniteJumpEnabled = v
-    if v then
-        UserInputService.JumpRequest:Connect(function()
-            local humanoid = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid then humanoid:ChangeState("Jumping") end
-        end)
-    end
-end)
-addToggle("Fly", function(v)
-    flyEnabled = v
-    local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    if v then
-        local speed = 50
-        local bodyVelocity = Instance.new("BodyVelocity", hrp)
-        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        local bodyGyro = Instance.new("BodyGyro", hrp)
-        bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-        bodyGyro.CFrame = hrp.CFrame
-        spawn(function()
-            while flyEnabled and hrp and hrp.Parent do
-                local cam = workspace.CurrentCamera
-                local moveDirection = Vector3.new(
-                    (UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.A) and 1 or 0),
-                    (UserInputService:IsKeyDown(Enum.KeyCode.Space) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) and 1 or 0),
-                    (UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0)
-                )
-                bodyVelocity.Velocity = cam.CFrame:VectorToWorldSpace(moveDirection) * speed
-                bodyGyro.CFrame = cam.CFrame
-                RunService.RenderStepped:Wait()
+local espPlayerToggle = addToggle("ESP Players", function(v)
+    ESPPlayerEnabled = v
+    if not v then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Character then
+                local espFrame = player.Character:FindFirstChild("ESPFrame")
+                if espFrame then espFrame:Destroy() end
             end
-            if bodyVelocity then bodyVelocity:Destroy() end
-            if bodyGyro then bodyGyro:Destroy() end
-        end)
-    else
-        local bodyVelocity = hrp:FindFirstChildOfClass("BodyVelocity")
-        local bodyGyro = hrp:FindFirstChildOfClass("BodyGyro")
-        if bodyVelocity then bodyVelocity:Destroy() end
-        if bodyGyro then bodyGyro:Destroy() end
+        end
     end
 end)
-addToggle("Jump Hack", function(v)
+local espZombyToggle = addToggle("ESP Zombies", function(v)
+    ESPZombyEnabled = v
+    if not v then
+        for _, enemy in pairs(workspace:GetDescendants()) do
+            if enemy:IsA("Model") and enemy:FindFirstChild("ESPFrame") then
+                enemy.ESPFrame:Destroy()
+            end
+        end
+    end
+end)
+addSlider("WalkSpeed", 16, 100, 50, function(v)
+    speedValue = v
+    applySpeedHack(speedHackEnabled)
+end)
+local speedHackToggle = addToggle("Speed Hack", function(v)
+    speedHackEnabled = v
+    applySpeedHack(v)
+end)
+addSlider("Jump Height", 7.2, 50, 7.2, function(v)
+    jumpMultiplier = v / 7.2
+    applyJumpHack(jumpHackEnabled)
+end)
+local infiniteJumpToggle = addToggle("Infinite Jump", function(v)
+    infiniteJumpEnabled = v
+    if infiniteJumpConnection then
+        infiniteJumpConnection:Disconnect()
+        infiniteJumpConnection = nil
+    end
+    if v then
+        infiniteJumpConnection = UserInputService.JumpRequest:Connect(function()
+            local humanoid = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then
+                humanoid:ChangeState("Jumping")
+                task.wait(0.2)
+            end
+        end)
+    end
+end)
+local flyToggle = addToggle("Fly", function(v)
+    flyEnabled = v
+    applyFly(v)
+end)
+addSlider("Fly Speed", 10, 100, 50, function(v)
+    flySpeed = v
+end)
+local jumpHackToggle = addToggle("Jump Hack", function(v)
     jumpHackEnabled = v
-    applyJumpHack()
+    applyJumpHack(v)
 end)
 addSlider("Jump Power", 1, 5, 1.5, function(v)
     jumpMultiplier = v
-    applyJumpHack()
+    applyJumpHack(jumpHackEnabled)
 end)
-addToggle("NoClip", function(v) noClipEnabled = v end)
-addToggle("Kill Aura", function(v)
+local noClipToggle = addToggle("NoClip", function(v)
+    noClipEnabled = v
+    if not v then
+        local char = plr.Character
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = true end
+            end
+        end
+    end
+end)
+local killAuraToggle = addToggle("Kill Aura", function(v)
     auraOn = v
     if v then spawn(killAuraLoop) end
 end)
-addSlider("Kill Aura Range", 5, 50, 15, function(v) killDist = v end)
+addSlider("Kill Aura Range", 5, 50, 15, function(v)
+    killDist = v
+end)
 addButton("Select Item", function()
     selectedItem = GetItemNames()[math.random(2, #GetItemNames())] or "Select an item"
 end)
@@ -523,6 +635,47 @@ RunService.Heartbeat:Connect(function(dt)
                 AddESPForEnemy(enemy)
             end
         end
+    end
+    if speedHackEnabled then
+        applySpeedHack(true)
+    end
+    if flyEnabled then
+        local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local bodyVelocity = hrp:FindFirstChild("FlyVelocity")
+            local bodyGyro = hrp:FindFirstChild("FlyGyro")
+            if bodyVelocity and bodyGyro then
+                local moveDirection = Vector3.new(0, 0, 0)
+                if touchStart and touchId then
+                    local delta = UserInputService:GetMouseLocation() - touchStart
+                    moveDirection = Vector3.new(
+                        math.clamp(delta.X / 50, -1, 1),
+                        -math.clamp(delta.Y / 50, -1, 1),
+                        0
+                    )
+                else
+                    moveDirection = Vector3.new(
+                        (UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.A) and 1 or 0),
+                        (UserInputService:IsKeyDown(Enum.KeyCode.Space) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) and 1 or 0),
+                        (UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0)
+                    )
+                end
+                bodyVelocity.Velocity = Cam.CFrame:VectorToWorldSpace(moveDirection) * flySpeed
+                bodyGyro.CFrame = Cam.CFrame
+            end
+        end
+    end
+    if checkTeleport() then
+        aimbotToggle[1].Text = "Aimbot: OFF"
+        espToggle[1].Text = "ESP Items/Mobs: OFF"
+        espPlayerToggle[1].Text = "ESP Players: OFF"
+        espZombyToggle[1].Text = "ESP Zombies: OFF"
+        speedHackToggle[1].Text = "Speed Hack: OFF"
+        infiniteJumpToggle[1].Text = "Infinite Jump: OFF"
+        flyToggle[1].Text = "Fly: OFF"
+        jumpHackToggle[1].Text = "Jump Hack: OFF"
+        noClipToggle[1].Text = "NoClip: OFF"
+        killAuraToggle[1].Text = "Kill Aura: OFF"
     end
 end)
 
