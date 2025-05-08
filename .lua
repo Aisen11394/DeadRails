@@ -1,4 +1,4 @@
--- Грук LUA: Компактный чит с исправленным GUI, полный функционал Kychar.txt
+-- Грук LUA: Компактный чит с маленьким прямоугольным GUI, открытие/закрытие кнопкой
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -11,57 +11,78 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "GrokLUA_Cheat"
 gui.Enabled = true
 gui.ResetOnSpawn = false
--- Используем gethui для совместимости с эксплойтами
 local success, err = pcall(function()
     gui.Parent = game:GetService("CoreGui")
 end)
 if not success then
     gui.Parent = game:GetService("Players").LocalPlayer.PlayerGui
 end
+
+-- Кнопка открытия/закрытия
+local toggleButton = Instance.new("TextButton", gui)
+toggleButton.Size = UDim2.new(0, 50, 0, 50)
+toggleButton.Position = UDim2.new(0, 0, 0.5, -25)
+toggleButton.Text = ">"
+toggleButton.BackgroundColor3 = Color3.new(0, 0, 0)
+toggleButton.TextColor3 = Color3.new(1, 1, 1)
+toggleButton.TextSize = 20
+toggleButton.BackgroundTransparency = 0.5
+
+-- Основной Frame
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 300, 0, 400)
-frame.Position = UDim2.new(0, 10, 0, 10)
+frame.Size = UDim2.new(0, 200, 0, 300)
+frame.Position = UDim2.new(0, 60, 0.5, -150)
 frame.BackgroundColor3 = Color3.new(0, 0, 0)
 frame.BackgroundTransparency = 0.5
-frame.Visible = true
+frame.Visible = false
+local scrollingFrame = Instance.new("ScrollingFrame", frame)
+scrollingFrame.Size = UDim2.new(1, 0, 1, -30)
+scrollingFrame.Position = UDim2.new(0, 0, 0, 30)
+scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 600)
+scrollingFrame.BackgroundTransparency = 1
+scrollingFrame.ScrollBarThickness = 5
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1, 0, 0, 30)
-title.Text = "Grok LUA Cheat"
+title.Text = "Grok LUA"
 title.TextColor3 = Color3.new(1, 1, 1)
 title.BackgroundTransparency = 1
-title.TextSize = 20
-local yOffset = 40
+title.TextSize = 16
+local yOffset = 10
 
+-- Функции для GUI
 local function addToggle(name, callback)
-    local toggle = Instance.new("TextButton", frame)
-    toggle.Size = UDim2.new(0.8, 0, 0, 30)
-    toggle.Position = UDim2.new(0.1, 0, 0, yOffset)
+    local toggle = Instance.new("TextButton", scrollingFrame)
+    toggle.Size = UDim2.new(0.9, 0, 0, 25)
+    toggle.Position = UDim2.new(0.05, 0, 0, yOffset)
     toggle.Text = name .. ": OFF"
     toggle.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     toggle.TextColor3 = Color3.new(1, 1, 1)
+    toggle.TextSize = 12
     local state = false
     toggle.MouseButton1Click:Connect(function()
         state = not state
         toggle.Text = name .. (state and ": ON" or ": OFF")
         callback(state)
     end)
-    yOffset = yOffset + 40
+    yOffset = yOffset + 30
     return toggle
 end
 
 local function addSlider(name, min, max, default, callback)
-    local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.8, 0, 0, 20)
-    label.Position = UDim2.new(0.1, 0, 0, yOffset)
+    local label = Instance.new("TextLabel", scrollingFrame)
+    label.Size = UDim2.new(0.9, 0, 0, 20)
+    label.Position = UDim2.new(0.05, 0, 0, yOffset)
     label.Text = name .. ": " .. default
     label.BackgroundTransparency = 1
     label.TextColor3 = Color3.new(1, 1, 1)
-    yOffset = yOffset + 30
-    local slider = Instance.new("TextButton", frame)
-    slider.Size = UDim2.new(0.8, 0, 0, 20)
-    slider.Position = UDim2.new(0.1, 0, 0, yOffset)
-    slider.Text = "-    +"
+    label.TextSize = 12
+    yOffset = yOffset + 25
+    local slider = Instance.new("TextButton", scrollingFrame)
+    slider.Size = UDim2.new(0.9, 0, 0, 20)
+    slider.Position = UDim2.new(0.05, 0, 0, yOffset)
+    slider.Text = "- +"
     slider.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+    slider.TextSize = 12
     local value = default
     slider.MouseButton1Click:Connect(function()
         value = value + 10
@@ -69,21 +90,28 @@ local function addSlider(name, min, max, default, callback)
         label.Text = name .. ": " .. value
         callback(value)
     end)
-    yOffset = yOffset + 30
+    yOffset = yOffset + 25
     return slider
 end
 
 local function addButton(name, callback)
-    local button = Instance.new("TextButton", frame)
-    button.Size = UDim2.new(0.8, 0, 0, 30)
-    button.Position = UDim2.new(0.1, 0, 0, yOffset)
+    local button = Instance.new("TextButton", scrollingFrame)
+    button.Size = UDim2.new(0.9, 0, 0, 25)
+    button.Position = UDim2.new(0.05, 0, 0, yOffset)
     button.Text = name
     button.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     button.TextColor3 = Color3.new(1, 1, 1)
+    button.TextSize = 12
     button.MouseButton1Click:Connect(callback)
-    yOffset = yOffset + 40
+    yOffset = yOffset + 30
     return button
 end
+
+-- Открытие/закрытие GUI
+toggleButton.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
+    toggleButton.Text = frame.Visible and "<" or ">"
+end)
 
 -- Aimbot
 local validNPCs = {}
